@@ -80,3 +80,4 @@ Recommended process:
 ## Notes
 - This service does not expose backend business-rule scoring as a public API mode.
 - If the LLM is unavailable, the API returns a user-friendly high-demand message.
+"# LLM_OLLAMA_INTEGRATION" 
