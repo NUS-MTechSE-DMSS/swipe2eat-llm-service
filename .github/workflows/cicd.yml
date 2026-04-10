@@ -1,0 +1,82 @@
+name: CI/CD — LLM Service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REGISTRY: 282793424364.dkr.ecr.ap-southeast-1.amazonaws.com
+  ECR_REPOSITORY: swe5006/llm-service
+  ECS_CLUSTER: swe5006-nus-g3-ecs-dev
+  ECS_SERVICE: swe5006-nus-g3-llm-dev
+  CONTAINER_NAME: llm
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest
+
+      - name: Run pytest
+        run: python -m pytest tests/ -v
+
+  build-and-deploy:
+    name: Build & Deploy
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image to ECR
+        id: build-image
+        run: |
+          IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
+          docker build -t $IMAGE .
+          docker push $IMAGE
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition swe5006-nus-g3-llm-dev \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Inject new image into task definition
+        id: task-def
+        uses: aws-actions/amazon-ecs-render-task-def@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy to ECS
+        uses: aws-actions/amazon-ecs-deploy-task-def@v2
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
