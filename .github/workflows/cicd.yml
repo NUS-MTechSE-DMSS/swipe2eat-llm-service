@@ -39,16 +39,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
+      - name: Configure AWS credentials and login to ECR
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ env.AWS_REGION }}
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $ECR_REGISTRY
 
       - name: Build and push image to ECR
         id: build-image
@@ -58,25 +55,32 @@ jobs:
           docker push $IMAGE
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
-      - name: Download current task definition
+      - name: Deploy to ECS
         run: |
-          aws ecs describe-task-definition \
+          IMAGE=${{ steps.build-image.outputs.image }}
+
+          # Get current task definition and inject new image
+          NEW_TASK_DEF=$(aws ecs describe-task-definition \
             --task-definition swe5006-nus-g3-llm-dev \
             --query taskDefinition \
-            > task-definition.json
+            --output json \
+            | jq --arg IMAGE "$IMAGE" --arg NAME "$CONTAINER_NAME" \
+              '.containerDefinitions |= map(if .name == $NAME then .image = $IMAGE else . end)
+               | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
 
-      - name: Inject new image into task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-def@v1
-        with:
-          task-definition: task-definition.json
-          container-name: ${{ env.CONTAINER_NAME }}
-          image: ${{ steps.build-image.outputs.image }}
+          # Register new task definition revision
+          NEW_REVISION=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
 
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-def@v2
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: ${{ env.ECS_SERVICE }}
-          cluster: ${{ env.ECS_CLUSTER }}
-          wait-for-service-stability: true
+          # Update ECS service with new revision
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --task-definition "$NEW_REVISION"
+
+          # Wait for service to stabilize
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE
