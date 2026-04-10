@@ -21,11 +21,18 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY schema_ai_analytics.sql ./
 
-# Expose Flask and Ollama ports
-EXPOSE 5000
-EXPOSE 11434
+# Bake Mistral model into the image at build time.
+# This avoids a 5-10 min download on every container start (which would cause
+# ECS health check failures and an infinite restart loop on Fargate).
+RUN ollama serve > /tmp/ollama.log 2>&1 & \
+    sleep 8 && \
+    ollama pull ${OLLAMA_MODEL:-mistral} && \
+    kill $(pgrep ollama) || true
 
-# Startup script
+# Expose Flask port (8080 to match ALB target group)
+EXPOSE 8080
+
+# Startup: start Ollama (model already baked in), wait for it, then Flask
 RUN printf '%s\n' \
   '#!/bin/sh' \
   'set -e' \
@@ -33,11 +40,8 @@ RUN printf '%s\n' \
   'echo "Starting Ollama..."' \
   'ollama serve > /tmp/ollama.log 2>&1 &' \
   '' \
-  'echo "Waiting for Ollama to start..."' \
+  'echo "Waiting for Ollama to be ready..."' \
   'sleep 5' \
-  '' \
-  'echo "Pulling model..."' \
-  'ollama pull ${OLLAMA_MODEL:-mistral}' \
   '' \
   'echo "Starting Flask app..."' \
   'cd /app/app && python main.py' \
