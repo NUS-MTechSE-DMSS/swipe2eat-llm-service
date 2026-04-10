@@ -80,7 +80,26 @@ jobs:
             --service $ECS_SERVICE \
             --task-definition "$NEW_REVISION"
 
-          # Wait for service to stabilize
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE
+          # Wait for service to stabilize (max 20 min, poll every 30s)
+          echo "Waiting for ECS service to stabilize..."
+          for i in $(seq 1 40); do
+            STATUS=$(aws ecs describe-services \
+              --cluster $ECS_CLUSTER \
+              --services $ECS_SERVICE \
+              --query 'services[0].deployments[?status==`PRIMARY`].rolloutState' \
+              --output text)
+            echo "Attempt $i/40 — rollout state: $STATUS"
+            if [ "$STATUS" = "COMPLETED" ]; then
+              echo "Deployment stabilized successfully."
+              break
+            fi
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "Deployment failed!"
+              exit 1
+            fi
+            if [ $i -eq 40 ]; then
+              echo "Timed out waiting for stabilization (20 min). Check ECS console."
+              exit 1
+            fi
+            sleep 30
+          done
