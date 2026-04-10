@@ -1,0 +1,21 @@
+inputSet:
+  name: SWE5006-llm-service-inputset
+  identifier: SWE5006llmserviceinputset
+  orgIdentifier: default
+  projectIdentifier: test
+  pipeline:
+    identifier: SWE5006llmservice
+    properties:
+      ci:
+        codebase:
+          build:
+            type: branch
+            spec:
+              branch: <+trigger.branch>
+
+    variables:
+      - name: RUN_GATLING_PERFORMANCE_TEST
+        value: "false"
+
+      - name: DAST_ZAP_SCAN_SERVICE_PATH
+        value: "/llm"
