@@ -27,7 +27,7 @@ def get_session_user() -> Optional[str]:
     return session.get("user_id")
 
 
-@app.route("/")
+@app.route("/llm/")
 def home():
     user_id = get_session_user()
     if not user_id:
@@ -79,7 +79,7 @@ function send() {{
     input.value = "";
     const typing = addBubble("Swipe2Eat is thinking...", "bot");
 
-    fetch("/chat", {{
+    fetch("/llm/chat", {{
         method: "POST",
         headers: {{ "Content-Type": "application/json" }},
         body: JSON.stringify({{ message: text }})
@@ -127,18 +127,18 @@ function renderReply(data) {{
 """
 
 
-@app.route("/health")
+@app.route("/llm/health")
 def health():
     return jsonify({"status": "ok"}), 200
 
 
-@app.route("/reset")
+@app.route("/llm/reset")
 def reset():
     session.clear()
     return "✅ Session cleared! Reload the page to pick a new user."
 
 
-@app.route("/chat", methods=["POST"])
+@app.route("/llm/chat", methods=["POST"])
 def chat():
     data = request.get_json() or {}
     user_id = data.get("user_id") or get_session_user()
@@ -164,4 +164,4 @@ def chat():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8080")), debug=False)
