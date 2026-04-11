@@ -17,7 +17,7 @@ class LLMClient:
         ollama_url: Optional[str] = None,
         cache: Optional[TTLCache] = None,
     ) -> None:
-        self.model = model or os.getenv("OLLAMA_MODEL", "mistral")
+        self.model = model or os.getenv("OLLAMA_MODEL", "llama3.2:1b")
         self.ollama_url = ollama_url or os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
         self.cache = cache or TTLCache()
 

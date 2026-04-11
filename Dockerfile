@@ -26,7 +26,7 @@ COPY schema_ai_analytics.sql ./
 # ECS health check failures and an infinite restart loop on Fargate).
 RUN ollama serve > /tmp/ollama.log 2>&1 & \
     sleep 8 && \
-    ollama pull ${OLLAMA_MODEL:-mistral} && \
+    ollama pull ${OLLAMA_MODEL:-llama3.2:1b} && \
     kill $(pgrep ollama) || true
 
 # Expose Flask port (8080 to match ALB target group)
@@ -50,9 +50,9 @@ RUN printf '%s\n' \
   '  sleep 2' \
   'done' \
   '' \
-  'echo "Warming up Mistral model into RAM..."' \
+  'echo "Warming up model into RAM..."' \
   'curl -s -X POST http://localhost:11434/api/generate \' \
-  '  -d "{\"model\":\"mistral\",\"prompt\":\"hi\",\"stream\":false}" \' \
+  '  -d "{\"model\":\"llama3.2:1b\",\"prompt\":\"hi\",\"stream\":false}" \' \
   '  > /dev/null' \
   'echo "Model warm-up complete."' \
   '' \
