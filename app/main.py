@@ -6,12 +6,14 @@ import random
 from typing import Optional
 
 from flask import Flask, jsonify, request, session
+from flask_cors import CORS
 
 from aggregator import UserProfileRepository
 from recommendation import RecommendationService
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "swipe2eat_llm_secret")
+CORS(app, origins=["https://dev.keiyam.me"], supports_credentials=True)
 
 profile_repository = UserProfileRepository()
 recommendation_service = RecommendationService(repository=profile_repository)
