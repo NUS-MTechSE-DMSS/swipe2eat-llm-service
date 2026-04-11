@@ -44,7 +44,7 @@ class LLMClient:
                     "model": self.model,
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"num_predict": 150},
+                    "options": {"num_predict": 80, "temperature": 0.7},
                 },
                 timeout=90,
             )
