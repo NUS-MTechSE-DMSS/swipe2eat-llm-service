@@ -13,7 +13,7 @@ from recommendation import RecommendationService
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "swipe2eat_llm_secret")
-CORS(app, origins=["https://dev.keiyam.me"], supports_credentials=True)
+CORS(app, origins=["https://dev.keiyam.me", "https://swipe2eat.netlify.app"], supports_credentials=True)
 
 profile_repository = UserProfileRepository()
 recommendation_service = RecommendationService(repository=profile_repository)
