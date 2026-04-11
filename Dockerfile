@@ -40,8 +40,21 @@ RUN printf '%s\n' \
   'echo "Starting Ollama..."' \
   'ollama serve > /tmp/ollama.log 2>&1 &' \
   '' \
-  'echo "Waiting for Ollama to be ready..."' \
-  'sleep 5' \
+  'echo "Waiting for Ollama API to be ready..."' \
+  'for i in $(seq 1 30); do' \
+  '  if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then' \
+  '    echo "Ollama is ready."' \
+  '    break' \
+  '  fi' \
+  '  echo "Attempt $i/30 - waiting..."' \
+  '  sleep 2' \
+  'done' \
+  '' \
+  'echo "Warming up Mistral model into RAM..."' \
+  'curl -s -X POST http://localhost:11434/api/generate \' \
+  '  -d "{\"model\":\"mistral\",\"prompt\":\"hi\",\"stream\":false}" \' \
+  '  > /dev/null' \
+  'echo "Model warm-up complete."' \
   '' \
   'echo "Starting Flask app..."' \
   'cd /app/app && python main.py' \
