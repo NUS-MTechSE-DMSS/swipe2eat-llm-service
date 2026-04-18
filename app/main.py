@@ -7,6 +7,7 @@ from typing import Optional
 
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect
 
 from aggregator import UserProfileRepository
 from recommendation import RecommendationService
@@ -20,6 +21,7 @@ app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 CORS(app, origins=["https://dev.keiyam.me", "https://swipe2eat.netlify.app"], supports_credentials=True)
+csrf = CSRFProtect(app)
 
 
 @app.after_request
@@ -52,7 +54,7 @@ def get_session_user() -> Optional[str]:
     return session.get("user_id")
 
 
-@app.route("/llm/")
+@app.route("/llm/", methods=["GET"])
 def home():
     user_id = get_session_user()
     if not user_id:
@@ -152,18 +154,20 @@ function renderReply(data) {{
 """
 
 
-@app.route("/llm/health")
+@app.route("/llm/health", methods=["GET"])
+@csrf.exempt
 def health():
     return jsonify({"status": "ok"}), 200
 
 
-@app.route("/llm/reset")
+@app.route("/llm/reset", methods=["GET"])
 def reset():
     session.clear()
     return "✅ Session cleared! Reload the page to pick a new user."
 
 
 @app.route("/llm/chat", methods=["POST"])
+@csrf.exempt
 def chat():
     data = request.get_json() or {}
     user_id = data.get("user_id") or get_session_user()
@@ -189,4 +193,4 @@ def chat():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8080")), debug=False)
+    app.run(host=os.getenv("FLASK_HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8080")), debug=False)
