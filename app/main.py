@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-import random
+import secrets
 from typing import Optional
 
 from flask import Flask, jsonify, request, session
@@ -12,7 +12,10 @@ from aggregator import UserProfileRepository
 from recommendation import RecommendationService
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "swipe2eat_llm_secret")
+_secret_key = os.getenv("FLASK_SECRET_KEY")
+if not _secret_key:
+    raise RuntimeError("FLASK_SECRET_KEY environment variable is not set")
+app.secret_key = _secret_key
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
@@ -45,7 +48,7 @@ HIGH_DEMAND_MESSAGE = "We are currently experiencing high demand. Recommendation
 def get_session_user() -> Optional[str]:
     if "user_id" not in session:
         user_ids = profile_repository.get_all_user_ids()
-        session["user_id"] = random.choice(user_ids) if user_ids else None
+        session["user_id"] = secrets.choice(user_ids) if user_ids else None
     return session.get("user_id")
 
 

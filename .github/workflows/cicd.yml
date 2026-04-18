@@ -2,7 +2,7 @@ name: CI/CD — LLM Service
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 env:
