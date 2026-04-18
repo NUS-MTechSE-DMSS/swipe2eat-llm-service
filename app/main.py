@@ -25,11 +25,13 @@ def set_security_headers(response):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';"
+        " form-action 'self'; base-uri 'self'; frame-ancestors 'none'"
     )
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
     response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers.remove("Server")
     response.headers["Server"] = "webserver"
     return response
 
