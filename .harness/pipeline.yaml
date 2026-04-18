@@ -75,7 +75,7 @@ pipeline:
                         cpu: "1"
                     command: |
                       sonar-scanner \
-                        -Dsonar.projectKey=nus-mtechse-dmss_<+pipeline.properties.ci.codebase.repoName> \
+                        -Dsonar.projectKey=<+pipeline.properties.ci.codebase.repoName> \
                         -Dsonar.organization=nus-mtechse-dmss \
                         -Dsonar.host.url=https://sonarcloud.io \
                         -Dsonar.token=<+secrets.getValue("SONAR_TOKEN")> \
@@ -86,7 +86,7 @@ pipeline:
 
                       echo "--------------------------------------------"
                       echo "SonarCloud Results:"
-                      echo "https://sonarcloud.io/project/overview?id=nus-mtechse-dmss_<+pipeline.properties.ci.codebase.repoName>"
+                      echo "https://sonarcloud.io/project/overview?id=<+pipeline.properties.ci.codebase.repoName>"
                       echo "--------------------------------------------"
 
     - stage:
