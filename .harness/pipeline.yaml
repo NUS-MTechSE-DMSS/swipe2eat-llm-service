@@ -49,13 +49,45 @@ pipeline:
                         memory: 1Gi
                         cpu: "1"
                     command: |
-                      pip install -r requirements.txt pytest --quiet
-                      python -m pytest tests/ -v
+                      pip install -r requirements.txt pytest pytest-cov --quiet
+                      python -m pytest tests/ -v \
+                        --cov=app \
+                        --cov-report=xml:coverage.xml \
+                        --cov-report=term-missing
                     reports:
                       type: JUnit
                       spec:
                         paths:
                           - test-results/*.xml
+
+              - step:
+                  type: Run
+                  name: Run SonarQube Analysis
+                  identifier: Run_Sonar
+                  spec:
+                    connectorRef: publicecrconnector
+                    image: sonarsource/sonar-scanner-cli:latest
+                    imagePullPolicy: IfNotPresent
+                    shell: Sh
+                    resources:
+                      limits:
+                        memory: 1Gi
+                        cpu: "1"
+                    command: |
+                      sonar-scanner \
+                        -Dsonar.projectKey=nus-mtechse-dmss_<+pipeline.properties.ci.codebase.repoName> \
+                        -Dsonar.organization=nus-mtechse-dmss \
+                        -Dsonar.host.url=https://sonarcloud.io \
+                        -Dsonar.token=<+secrets.getValue("SONAR_TOKEN")> \
+                        -Dsonar.sources=app \
+                        -Dsonar.tests=tests \
+                        -Dsonar.python.version=3.11 \
+                        -Dsonar.python.coverage.reportPaths=coverage.xml
+
+                      echo "--------------------------------------------"
+                      echo "SonarCloud Results:"
+                      echo "https://sonarcloud.io/project/overview?id=nus-mtechse-dmss_<+pipeline.properties.ci.codebase.repoName>"
+                      echo "--------------------------------------------"
 
     - stage:
         name: Build
