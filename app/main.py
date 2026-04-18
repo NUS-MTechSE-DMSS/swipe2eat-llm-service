@@ -13,7 +13,25 @@ from recommendation import RecommendationService
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "swipe2eat_llm_secret")
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 CORS(app, origins=["https://dev.keiyam.me", "https://swipe2eat.netlify.app"], supports_credentials=True)
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"
+    )
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Server"] = "webserver"
+    return response
 
 profile_repository = UserProfileRepository()
 recommendation_service = RecommendationService(repository=profile_repository)

@@ -1,0 +1,44 @@
+env:
+  contexts:
+    - name: LLM Service
+      urls:
+        - https://dev.keiyam.me/llm
+      includePaths:
+        - https://dev.keiyam.me/llm.*
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+
+jobs:
+  - type: spider
+    parameters:
+      url: https://dev.keiyam.me/llm
+      maxDuration: 2
+
+  - type: requestor
+    parameters:
+      user: ""
+    requests:
+      - url: https://dev.keiyam.me/llm/health
+        method: GET
+      - url: https://dev.keiyam.me/llm/chat
+        method: POST
+        headers:
+          Content-Type: application/json
+        data: '{"message": "I want Thai food", "user_id": "1"}'
+
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 5
+
+  - type: activeScan
+    parameters:
+      context: LLM Service
+      maxDuration: 10
+
+  - type: report
+    parameters:
+      template: traditional-html
+      reportDir: /zap/wrk
+      reportFile: zap-report.html
