@@ -1,9 +1,7 @@
 # selector.py
-
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 
 class CandidateSelector:
@@ -21,13 +19,35 @@ class CandidateSelector:
             "query_spice": 2.0,
             "high_protein": 2.0,
             "light_food": 2.0,
+            "comfort_food": 2.0,
             "disliked_or_forbidden": -100.0,
+            "wants_new_food": 2.0,
         }
 
     def shortlist(self, message: str, profile: dict, foods: list[dict], top_k: int = 8) -> list[dict]:
         intent = self._extract_intent(message)
         ranked: list[dict] = []
-        for food in foods:
+
+        candidate_foods = foods
+
+        query_cuisine = intent.get("preferred_cuisine")
+        if query_cuisine:
+            filtered = [
+                food for food in candidate_foods
+                if str(food.get("cuisine", "")).strip().lower() == query_cuisine
+            ]
+            if filtered:
+                candidate_foods = filtered
+
+        if intent.get("is_vegetarian"):
+            veg_filtered = [
+                food for food in candidate_foods
+                if self._is_vegetarian_food(food)
+            ]
+            if veg_filtered:
+                candidate_foods = veg_filtered
+
+        for food in candidate_foods:
             score, reasons = self._score(food, profile, intent)
             enriched = dict(food)
             enriched["internal_score"] = round(score, 2)
@@ -35,7 +55,23 @@ class CandidateSelector:
             ranked.append(enriched)
 
         ranked.sort(key=lambda item: item["internal_score"], reverse=True)
-        return ranked[:top_k]
+
+        seen_names = set()
+        unique_ranked: list[dict] = []
+
+        for item in ranked:
+            key = str(item.get("name", "")).strip().lower()
+            if not key:
+                continue
+            if key in seen_names:
+                continue
+            seen_names.add(key)
+            unique_ranked.append(item)
+
+            if len(unique_ranked) >= top_k:
+                break
+
+        return unique_ranked
 
     def _score(self, food: dict, profile: dict, intent: dict) -> tuple[float, list[str]]:
         score = 0.0
@@ -66,11 +102,16 @@ class CandidateSelector:
 
         likes = {str(item).lower() for item in profile.get("likes", [])}
         dislikes = {str(item).lower() for item in profile.get("dislikes", [])}
+
         if name in likes:
             score += self.weights["liked_before"]
             reasons.append("liked before")
-        elif name not in likes:
+        else:
             score += self.weights["novelty"]
+
+        if intent.get("wants_new_food") and name not in likes:
+            score += self.weights["wants_new_food"]
+            reasons.append("new option")
 
         dietary = profile.get("dietary_preferences", {}) or {}
         forbidden = str(dietary.get("forbidden_items") or "").lower()
@@ -84,13 +125,22 @@ class CandidateSelector:
             score += self.weights["query_cuisine"]
             reasons.append("matches current cuisine request")
 
-        query_budget = intent.get("budget_limit")
-        if query_budget is not None:
-            if price <= query_budget:
-                score += self.weights["query_budget"]
-                reasons.append("fits current budget request")
-            else:
-                score -= self.weights["query_budget"]
+        budget_limit = intent.get("budget_limit")
+        budget_direction = intent.get("budget_direction")
+
+        if budget_limit is not None:
+            if budget_direction == "max":
+                if price <= budget_limit:
+                    score += self.weights["query_budget"]
+                    reasons.append("fits current budget request")
+                else:
+                    score -= self.weights["query_budget"] * 2
+            elif budget_direction == "min":
+                if price >= budget_limit:
+                    score += self.weights["query_budget"]
+                    reasons.append("fits current price range request")
+                else:
+                    score -= self.weights["query_budget"] * 2
 
         query_spice = intent.get("spice_level")
         if query_spice is not None:
@@ -99,26 +149,38 @@ class CandidateSelector:
             if query_gap <= 1:
                 reasons.append("matches current spice request")
 
-        if intent.get("wants_high_protein") and any(token in name for token in ["chicken", "fish", "egg", "tofu", "paneer"]):
+        if intent.get("wants_high_protein") and any(
+            token in name for token in ["chicken", "fish", "egg", "tofu", "paneer"]
+        ):
             score += self.weights["high_protein"]
             reasons.append("good high-protein fit")
 
-        if intent.get("wants_light_food") and any(token in name for token in ["soup", "salad", "grilled", "steamed", "tofu"]):
+        if intent.get("wants_light_food") and any(
+            token in name for token in ["soup", "salad", "grilled", "steamed", "tofu"]
+        ):
             score += self.weights["light_food"]
             reasons.append("lighter option")
+
+        if intent.get("wants_comfort_food") and any(
+            token in name
+            for token in ["curry", "soup", "noodles", "rice", "porridge", "rendang", "laksa", "biryani"]
+        ):
+            score += self.weights["comfort_food"]
+            reasons.append("comforting option")
 
         return score, reasons
 
     def _extract_intent(self, message: str) -> dict:
         msg = (message or "").lower()
+
         cuisine = None
-        for option in ["chinese", "malay", "indian", "thai", "western"]:
+        for option in ["chinese", "malay", "indian", "thai", "western", "japanese"]:
             if option in msg:
                 cuisine = option
                 break
 
         spice = None
-        if "mild" in msg or "not spicy" in msg:
+        if "mild" in msg or "not spicy" in msg or "less spicy" in msg:
             spice = 2
         elif "medium" in msg:
             spice = 3
@@ -126,14 +188,51 @@ class CandidateSelector:
             spice = 4
 
         budget_limit = None
-        budget_match = re.search(r"(?:under|below|budget)\s*\$?(\d+(?:\.\d+)?)", msg)
-        if budget_match:
-            budget_limit = float(budget_match.group(1))
+        budget_direction = None
+
+        max_match = re.search(
+            r"(?:under|below|less than)\s*\$?\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*\$?\s*(?:or less|or below)",
+            msg
+        )
+        min_match = re.search(
+            r"(?:above|over|more than|greater than)\s*\$?\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*\$?\s*(?:or more|or above)",
+            msg
+        )
+
+        if max_match:
+            budget_limit = float(max_match.group(1) or max_match.group(2))
+            budget_direction = "max"
+        elif min_match:
+            budget_limit = float(min_match.group(1) or min_match.group(2))
+            budget_direction = "min"
 
         return {
             "preferred_cuisine": cuisine,
             "spice_level": spice,
+            "is_vegetarian": "vegetarian" in msg or re.search(r"\bveg\b", msg) is not None,
             "wants_high_protein": "protein" in msg,
             "wants_light_food": any(token in msg for token in ["light", "not oily", "less oily", "healthy"]),
+            "wants_comfort_food": any(token in msg for token in ["comfort", "comforting", "warm", "hearty"]),
+            "wants_new_food": any(
+                phrase in msg
+                for phrase in ["something new", "new dishes", "different", "interesting", "haven't tried", "anything new"]
+            ),
             "budget_limit": budget_limit,
+            "budget_direction": budget_direction,
         }
+
+    def _is_vegetarian_food(self, food: dict) -> bool:
+        text = " ".join(
+            [
+                str(food.get("name", "")),
+                str(food.get("cuisine", "")),
+                str(food.get("category", "")),
+            ]
+        ).lower()
+
+        non_veg_tokens = [
+            "chicken", "fish", "beef", "pork", "mutton", "lamb",
+            "duck", "seafood", "shrimp", "prawn", "crab", "egg"
+        ]
+
+        return not any(token in text for token in non_veg_tokens)

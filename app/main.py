@@ -94,7 +94,9 @@ button {{ padding: 12px 14px; border: none; border-radius: 10px; background: #10
         <button onclick=\"send()\">Send</button>
     </div>
 </div>
+
 <script>
+const SHOW_CARDS = true;
 const input = document.getElementById("msg");
 const chatBox = document.getElementById("chatBox");
 input.addEventListener("keypress", function(e) {{ if (e.key === "Enter") send(); }});
@@ -187,7 +189,7 @@ def chat():
         print(f"LLM path unavailable: {exc}")
         return jsonify({
             "source": "llm_unavailable",
-            "reply": HIGH_DEMAND_MESSAGE,
+            "reply": "We are currently experiencing high demand. Recommendations will be available shortly.",
             "recommendations": [],
         }), 200
 

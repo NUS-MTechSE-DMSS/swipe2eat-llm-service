@@ -27,8 +27,47 @@ class RecommendationService:
         self.llm_client = llm_client or LLMClient(cache=TTLCache())
         self.response_cache = TTLCache()
 
+    def _is_greeting_only(self, message: str) -> bool:
+        msg = (message or "").strip().lower()
+        greetings = {
+            "hi", "hii", "hiii", "hello", "hey", "helo", "hy",
+            "good morning", "good afternoon", "good evening"
+        }
+        return msg in greetings
+
     def generate(self, user_id: str, message: str) -> dict:
-        if not self.validator.is_food_query(message):
+        message = str(message or "").strip()
+
+        if self._is_greeting_only(message):
+            return {
+                "source": "greeting",
+                "reply": (
+                    "Hi! I can help you with food recommendations. "
+                    "Try asking something like 'less spicy Indian food' or 'cheap chicken under $10'."
+                ),
+                "recommendations": [],
+            }
+
+        is_food_query = self.validator.is_food_query(message)
+
+        # allow discovery / exploration style food requests
+        msg_lower = message.lower()
+        is_exploration_query = any(
+            phrase in msg_lower
+            for phrase in [
+                "something new",
+                "new dishes",
+                "not liked",
+                "haven't tried",
+                "different",
+                "interesting",
+                "suggest something",
+                "recommend something",
+                "anything new",
+            ]
+        )
+
+        if not is_food_query and not is_exploration_query:
             self.analytics.log(user_id, "food_query_rejected", {"message": message})
             return {
                 "source": "guardrail",
@@ -36,7 +75,7 @@ class RecommendationService:
                 "recommendations": [],
             }
 
-        cache_key = f"recommend:{user_id}:{message.strip().lower()}"
+        cache_key = f"recommend:{user_id}:{message.lower()}"
         cached = self.response_cache.get(cache_key)
         if cached:
             self.analytics.log(user_id, "recommendation_cache_hit", {"message": message})
@@ -50,7 +89,22 @@ class RecommendationService:
         foods = profile.get("available_food", [])
         shortlisted = self.selector.shortlist(message=message, profile=profile, foods=foods, top_k=8)
 
-        reply = self.llm_client.generate_recommendation(message=message, profile=profile, shortlisted_foods=shortlisted)
+        if not shortlisted:
+            return {
+                "source": "no_candidates",
+                "reply": "Sorry, I couldn't find suitable food options based on your request.",
+                "recommendations": [],
+            }
+
+        # Use the same exact 3 items for both cards and LLM text
+        top_recommendations = shortlisted[:3]
+
+        reply = self.llm_client.generate_recommendation(
+            message=message,
+            profile=profile,
+            shortlisted_foods=top_recommendations,
+        )
+
         payload = {
             "source": "llm",
             "reply": reply,
@@ -62,13 +116,14 @@ class RecommendationService:
                     "cuisine": item.get("cuisine"),
                     "reasons": item.get("reasons", []),
                 }
-                for item in shortlisted[:3]
+                for item in top_recommendations
             ],
             "user": {
                 "user_id": profile.get("user_id"),
                 "name": profile.get("name"),
             },
         }
+
         self.response_cache.set(cache_key, payload, ttl_seconds=300)
         self.analytics.log(
             user_id,
@@ -79,3 +134,4 @@ class RecommendationService:
             },
         )
         return payload
+    
