@@ -4,7 +4,7 @@ import re
 
 
 FOOD_KEYWORDS = {
-    "food", "eat", "meal", "dish", "dishes", "hungry", "recommend", "recommended", "suggest",
+    "food", "eat", "meal", "dish", "dishes", "hungry", "recommend", "recommended", "suggest", "restaurant",
     "cuisine", "budget", "cheap", "expensive", "affordable", "under", "below", "above", "over",
     "spicy", "spice", "mild", "medium", "hot",
     "vegetarian", "vegan", "veg", "halal", "healthy", "protein", "fibre", "fiber",
@@ -19,6 +19,7 @@ FOOD_KEYWORDS = {
 }
 
 FOOD_PHRASES = {
+    "restaurant",
     "not spicy",
     "non spicy",
     "less spicy",
@@ -39,6 +40,7 @@ FOOD_PHRASES = {
 }
 
 INTENT_PATTERNS = [
+    r"\bi want\b",
     r"\bi want to eat\b",
     r"\bi wish to eat\b",
     r"\bwhat should i eat\b",
