@@ -84,16 +84,23 @@ jobs:
           echo "image=$IMAGE" >> $GITHUB_OUTPUT
 
       - name: Deploy to ECS
+        env:
+          FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
         run: |
           IMAGE=${{ steps.build-image.outputs.image }}
 
-          # Get current task definition and inject new image
+          # Get current task definition, inject new image and required env vars
           NEW_TASK_DEF=$(aws ecs describe-task-definition \
             --task-definition swe5006-nus-g3-llm-dev \
             --query taskDefinition \
             --output json \
             | jq --arg IMAGE "$IMAGE" --arg NAME "$CONTAINER_NAME" \
-              '.containerDefinitions |= map(if .name == $NAME then .image = $IMAGE else . end)
+                 --arg SECRET_KEY "$FLASK_SECRET_KEY" \
+              '.containerDefinitions |= map(
+                 if .name == $NAME then
+                   .image = $IMAGE |
+                   .environment = ((.environment // []) | map(select(.name != "FLASK_SECRET_KEY")) + [{"name": "FLASK_SECRET_KEY", "value": $SECRET_KEY}])
+                 else . end)
                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
 
           # Register new task definition revision
