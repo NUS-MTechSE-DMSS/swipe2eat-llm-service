@@ -244,15 +244,15 @@ class CandidateSelector:
         }
 
     def _parse_budget(self, msg: str) -> tuple:
-        max_match = re.search(r"(?:under|below|less than) ?\$?(\d+(?:\.\d+)?)", msg)
+        max_match = re.search(r"(?:under|below|less than) ?\$?(\d+\.\d+|\d+)", msg)
         if not max_match:
-            max_match = re.search(r"(\d+(?:\.\d+)?) ?(?:or less|or below)", msg)
+            max_match = re.search(r"(\d+\.\d+|\d+) ?(?:or less|or below)", msg)
         if max_match:
             return float(max_match.group(1)), "max"
 
-        min_match = re.search(r"(?:above|over|more than|greater than) ?\$?(\d+(?:\.\d+)?)", msg)
+        min_match = re.search(r"(?:above|over|more than|greater than) ?\$?(\d+\.\d+|\d+)", msg)
         if not min_match:
-            min_match = re.search(r"(\d+(?:\.\d+)?) ?(?:or more|or above)", msg)
+            min_match = re.search(r"(\d+\.\d+|\d+) ?(?:or more|or above)", msg)
         if min_match:
             return float(min_match.group(1)), "min"
 
