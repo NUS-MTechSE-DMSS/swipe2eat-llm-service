@@ -74,13 +74,28 @@ class CandidateSelector:
         return unique_ranked
 
     def _score(self, food: dict, profile: dict, intent: dict) -> tuple[float, list[str]]:
-        score = 0.0
-        reasons: list[str] = []
-
         name = str(food.get("name", "")).lower()
         cuisine = str(food.get("cuisine", "Unknown")).lower()
         price = float(food.get("price", 9999))
         spice = int(food.get("spice_level", 3))
+        likes = {str(item).lower() for item in profile.get("likes", [])}
+
+        p_score, p_reasons = self._score_profile_match(name, cuisine, price, spice, profile, likes)
+        i_score, i_reasons = self._score_intent_match(name, cuisine, price, spice, intent, likes)
+
+        return p_score + i_score, p_reasons + i_reasons
+
+    def _score_profile_match(
+        self,
+        name: str,
+        cuisine: str,
+        price: float,
+        spice: int,
+        profile: dict,
+        likes: set,
+    ) -> tuple[float, list[str]]:
+        score = 0.0
+        reasons: list[str] = []
 
         favorite_cuisines = {str(c).lower() for c in profile.get("favorite_cuisines", [])}
         if cuisine in favorite_cuisines:
@@ -100,19 +115,13 @@ class CandidateSelector:
         if spice_gap <= 1:
             reasons.append("fits spice preference")
 
-        likes = {str(item).lower() for item in profile.get("likes", [])}
-        dislikes = {str(item).lower() for item in profile.get("dislikes", [])}
-
         if name in likes:
             score += self.weights["liked_before"]
             reasons.append("liked before")
         else:
             score += self.weights["novelty"]
 
-        if intent.get("wants_new_food") and name not in likes:
-            score += self.weights["wants_new_food"]
-            reasons.append("new option")
-
+        dislikes = {str(item).lower() for item in profile.get("dislikes", [])}
         dietary = profile.get("dietary_preferences", {}) or {}
         forbidden = str(dietary.get("forbidden_items") or "").lower()
         allergies = str(dietary.get("allergies") or "").lower()
@@ -120,27 +129,57 @@ class CandidateSelector:
             score += self.weights["disliked_or_forbidden"]
             reasons.append("not suitable from profile")
 
+        return score, reasons
+
+    def _score_budget_intent(self, price: float, intent: dict) -> tuple[float, list[str]]:
+        score = 0.0
+        reasons: list[str] = []
+
+        budget_limit = intent.get("budget_limit")
+        budget_direction = intent.get("budget_direction")
+
+        if budget_limit is None:
+            return score, reasons
+
+        if budget_direction == "max":
+            if price <= budget_limit:
+                score += self.weights["query_budget"]
+                reasons.append("fits current budget request")
+            else:
+                score -= self.weights["query_budget"] * 2
+        elif budget_direction == "min":
+            if price >= budget_limit:
+                score += self.weights["query_budget"]
+                reasons.append("fits current price range request")
+            else:
+                score -= self.weights["query_budget"] * 2
+
+        return score, reasons
+
+    def _score_intent_match(
+        self,
+        name: str,
+        cuisine: str,
+        price: float,
+        spice: int,
+        intent: dict,
+        likes: set,
+    ) -> tuple[float, list[str]]:
+        score = 0.0
+        reasons: list[str] = []
+
+        if intent.get("wants_new_food") and name not in likes:
+            score += self.weights["wants_new_food"]
+            reasons.append("new option")
+
         query_cuisine = intent.get("preferred_cuisine")
         if query_cuisine and cuisine == query_cuisine:
             score += self.weights["query_cuisine"]
             reasons.append("matches current cuisine request")
 
-        budget_limit = intent.get("budget_limit")
-        budget_direction = intent.get("budget_direction")
-
-        if budget_limit is not None:
-            if budget_direction == "max":
-                if price <= budget_limit:
-                    score += self.weights["query_budget"]
-                    reasons.append("fits current budget request")
-                else:
-                    score -= self.weights["query_budget"] * 2
-            elif budget_direction == "min":
-                if price >= budget_limit:
-                    score += self.weights["query_budget"]
-                    reasons.append("fits current price range request")
-                else:
-                    score -= self.weights["query_budget"] * 2
+        b_score, b_reasons = self._score_budget_intent(price, intent)
+        score += b_score
+        reasons.extend(b_reasons)
 
         query_spice = intent.get("spice_level")
         if query_spice is not None:
@@ -187,24 +226,7 @@ class CandidateSelector:
         elif "spicy" in msg or "hot" in msg:
             spice = 4
 
-        budget_limit = None
-        budget_direction = None
-
-        max_match = re.search(
-            r"(?:under|below|less than)\s*\$?\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*\$?\s*(?:or less|or below)",
-            msg
-        )
-        min_match = re.search(
-            r"(?:above|over|more than|greater than)\s*\$?\s*(\d+(?:\.\d+)?)|(\d+(?:\.\d+)?)\s*\$?\s*(?:or more|or above)",
-            msg
-        )
-
-        if max_match:
-            budget_limit = float(max_match.group(1) or max_match.group(2))
-            budget_direction = "max"
-        elif min_match:
-            budget_limit = float(min_match.group(1) or min_match.group(2))
-            budget_direction = "min"
+        budget_limit, budget_direction = self._parse_budget(msg)
 
         return {
             "preferred_cuisine": cuisine,
@@ -220,6 +242,21 @@ class CandidateSelector:
             "budget_limit": budget_limit,
             "budget_direction": budget_direction,
         }
+
+    def _parse_budget(self, msg: str) -> tuple:
+        max_match = re.search(r"(?:under|below|less than)\s*\$?\s*(\d+(?:\.\d+)?)", msg)
+        if not max_match:
+            max_match = re.search(r"(\d+(?:\.\d+)?)\s*\$?\s*(?:or less|or below)", msg)
+        if max_match:
+            return float(max_match.group(1)), "max"
+
+        min_match = re.search(r"(?:above|over|more than|greater than)\s*\$?\s*(\d+(?:\.\d+)?)", msg)
+        if not min_match:
+            min_match = re.search(r"(\d+(?:\.\d+)?)\s*\$?\s*(?:or more|or above)", msg)
+        if min_match:
+            return float(min_match.group(1)), "min"
+
+        return None, None
 
     def _is_vegetarian_food(self, food: dict) -> bool:
         text = " ".join(

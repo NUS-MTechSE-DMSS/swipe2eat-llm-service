@@ -74,47 +74,19 @@ class QueryValidator:
 
         msg = message.lower().strip()
 
-        score = 0
-        matched_phrases: list[str] = []
-        matched_keywords: list[str] = []
-        matched_patterns: list[str] = []
-
-        for phrase in FOOD_PHRASES:
-            if phrase in msg:
-                matched_phrases.append(phrase)
-
-        if matched_phrases:
-            score += 2
-
-        for pattern in INTENT_PATTERNS:
-            if re.search(pattern, msg):
-                matched_patterns.append(pattern)
-
-        if matched_patterns:
-            score += 2
+        matched_phrases = [phrase for phrase in FOOD_PHRASES if phrase in msg]
+        matched_patterns = [p for p in INTENT_PATTERNS if re.search(p, msg)]
 
         tokens = re.findall(r"[a-zA-Z]+", msg)
-        keyword_hits = [token for token in tokens if token in FOOD_KEYWORDS]
+        matched_keywords = list(dict.fromkeys(t for t in tokens if t in FOOD_KEYWORDS))
 
-        seen = set()
-        for token in keyword_hits:
-            if token not in seen:
-                seen.add(token)
-                matched_keywords.append(token)
-
+        score = 0
+        if matched_phrases:
+            score += 2
+        if matched_patterns:
+            score += 2
         score += min(len(matched_keywords), 3)
-
-        if re.search(r"\b(under|below|less than)\s*\$?\d+(?:\.\d+)?\b", msg):
-            score += 1
-
-        if re.search(r"\b(above|over|more than)\s*\$?\d+(?:\.\d+)?\b", msg):
-            score += 1
-
-        if re.search(r"\b(chinese|malay|indian|thai|western|japanese)\b", msg):
-            score += 1
-
-        if re.search(r"\b(spicy|mild|medium|hot)\b", msg):
-            score += 1
+        score += self._signal_score(msg)
 
         is_food = score >= 2
         reason = "matched_food_signals" if is_food else "insufficient_food_signals"
@@ -126,3 +98,15 @@ class QueryValidator:
             "matched_keywords": matched_keywords,
             "matched_patterns": matched_patterns,
         }
+
+    def _signal_score(self, msg: str) -> int:
+        score = 0
+        if re.search(r"\b(under|below|less than)\s*\$?\d+(?:\.\d+)?\b", msg):
+            score += 1
+        if re.search(r"\b(above|over|more than)\s*\$?\d+(?:\.\d+)?\b", msg):
+            score += 1
+        if re.search(r"\b(chinese|malay|indian|thai|western|japanese)\b", msg):
+            score += 1
+        if re.search(r"\b(spicy|mild|medium|hot)\b", msg):
+            score += 1
+        return score
