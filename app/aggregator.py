@@ -213,7 +213,7 @@ class UserProfileRepository:
     # -------------------------------
     # 📊 ANALYTICS LOG
     # -------------------------------
-    def log_ai_event(self, user_id: str, event_type: str, payload: dict) -> None:
+    def log_ai_event(self, user_id: str, event_type: str) -> None:
         print(f"[Analytics disabled] {event_type} for user {user_id}")
         
       
