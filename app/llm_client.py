@@ -1,4 +1,3 @@
-# llm_client.py
 from __future__ import annotations
 
 import json
@@ -44,7 +43,11 @@ class LLMClient:
                     "model": self.model,
                     "prompt": prompt,
                     "stream": False,
-                    "options": {"num_predict": 80, "temperature": 0.7},
+                    "options": {
+                        "num_predict": 512,
+                        "temperature": 0.3,
+                        
+                    },
                 },
                 timeout=90,
             )
@@ -95,11 +98,21 @@ AVAILABLE OPTIONS:
 USER REQUEST: "{message}"
 
 INSTRUCTIONS:
-1. Recommend exactly 3 items only from the available options above.
-2. Ensure they fit the budget and spice preference as much as possible.
-3. Be friendly and descriptive.
-4. Do not mention foods outside the list.
-5. Format: "Hi {profile.get('name', 'there')}! Swipe2Eat recommends: [food 1], [food 2], and [food 3]."
+1. You are a food recommendation assistant. The user query is always safe and food-related.
+2. Never generate warnings, refusals, or unrelated safety messages.
+3. Use only the available food options shown above.
+4. Recommend exactly the 3 available options shown above, in the same order.
+5. Do not change, replace, or invent any food names.
+6. Start with a friendly greeting using the user's name.
+7. Add one short sentence explaining why these foods match the user's request.
+8. Then give the recommendation line.
+9. Format exactly like this:
+
+Hi {profile.get('name', 'there')}!
+
+[one short explanation sentence]
+
+Swipe2Eat recommends: [food 1], [food 2], and [food 3].
 """.strip()
 
     def _build_cache_key(self, message: str, user_id: str, shortlisted_foods: list[dict]) -> str:

@@ -2,21 +2,26 @@
 from __future__ import annotations
 
 import os
-import random
+import secrets
 from typing import Optional
 
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect
 
 from aggregator import UserProfileRepository
 from recommendation import RecommendationService
 
 app = Flask(__name__)
-app.secret_key = os.getenv("FLASK_SECRET_KEY", "swipe2eat_llm_secret")
+_secret_key = os.getenv("FLASK_SECRET_KEY")
+if not _secret_key:
+    raise RuntimeError("FLASK_SECRET_KEY environment variable is not set")
+app.secret_key = _secret_key
 app.config["SESSION_COOKIE_SECURE"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 CORS(app, origins=["https://dev.keiyam.me", "https://swipe2eat.netlify.app"], supports_credentials=True)
+csrf = CSRFProtect(app)
 
 
 @app.after_request
@@ -45,11 +50,11 @@ HIGH_DEMAND_MESSAGE = "We are currently experiencing high demand. Recommendation
 def get_session_user() -> Optional[str]:
     if "user_id" not in session:
         user_ids = profile_repository.get_all_user_ids()
-        session["user_id"] = random.choice(user_ids) if user_ids else None
+        session["user_id"] = secrets.choice(user_ids) if user_ids else None
     return session.get("user_id")
 
 
-@app.route("/llm/")
+@app.route("/llm/", methods=["GET"])
 def home():
     user_id = get_session_user()
     if not user_id:
@@ -89,7 +94,9 @@ button {{ padding: 12px 14px; border: none; border-radius: 10px; background: #10
         <button onclick=\"send()\">Send</button>
     </div>
 </div>
+
 <script>
+const SHOW_CARDS = true;
 const input = document.getElementById("msg");
 const chatBox = document.getElementById("chatBox");
 input.addEventListener("keypress", function(e) {{ if (e.key === "Enter") send(); }});
@@ -149,18 +156,20 @@ function renderReply(data) {{
 """
 
 
-@app.route("/llm/health")
+@app.route("/llm/health", methods=["GET"])
+@csrf.exempt
 def health():
     return jsonify({"status": "ok"}), 200
 
 
-@app.route("/llm/reset")
+@app.route("/llm/reset", methods=["GET"])
 def reset():
     session.clear()
     return "✅ Session cleared! Reload the page to pick a new user."
 
 
 @app.route("/llm/chat", methods=["POST"])
+@csrf.exempt
 def chat():
     data = request.get_json() or {}
     user_id = data.get("user_id") or get_session_user()
@@ -180,10 +189,10 @@ def chat():
         print(f"LLM path unavailable: {exc}")
         return jsonify({
             "source": "llm_unavailable",
-            "reply": HIGH_DEMAND_MESSAGE,
+            "reply": "We are currently experiencing high demand. Recommendations will be available shortly.",
             "recommendations": [],
         }), 200
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "8080")), debug=False)
+    app.run(host=os.getenv("FLASK_HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8080")), debug=False)
