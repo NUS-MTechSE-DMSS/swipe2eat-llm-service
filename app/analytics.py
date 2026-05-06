@@ -8,7 +8,7 @@ class AnalyticsLogger:
     def __init__(self, repository: Optional[Any] = None) -> None:
         self.repository = repository
 
-    def log(self, user_id: str, event_type: str) -> None:
+    def log(self, user_id: str, event_type: str, metadata: Optional[Any] = None) -> None:
         if not self.repository:
             return
         try:
