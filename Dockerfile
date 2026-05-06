@@ -1,5 +1,8 @@
 FROM python:3.11-slim
 
+ARG OLLAMA_MODEL=mistral
+ENV OLLAMA_MODEL=${OLLAMA_MODEL}
+
 WORKDIR /app
 
 # System packages required for Ollama install
@@ -52,7 +55,7 @@ RUN printf '%s\n' \
   '' \
   'echo "Warming up model into RAM..."' \
   'curl -s -X POST http://localhost:11434/api/generate \' \
-  '  -d "{\"model\":\"llama3.2:1b\",\"prompt\":\"hi\",\"stream\":false}" \' \
+  '  -d "{\"model\":\"${OLLAMA_MODEL:-mistral}\",\"prompt\":\"hi\",\"stream\":false}" \' \
   '  > /dev/null' \
   'echo "Model warm-up complete."' \
   '' \
