@@ -58,9 +58,28 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
+  snyk:
+    name: Snyk Dependency Scan
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      - name: Run Snyk dependency scan
+        run: snyk test --file=requirements.txt --package-manager=pip --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
   build-and-deploy:
     name: Build & Deploy
-    needs: [test, sonar]
+    needs: [test, sonar, snyk]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
 
