@@ -5,3 +5,6 @@ psycopg2-binary==2.9.9
 python-dotenv==1.0.1
 requests==2.32.3
 pytest==8.1.1
+testcontainers[postgres]>=4.0.0
+pytest-timeout>=2.3.0
+locust>=2.29.0
