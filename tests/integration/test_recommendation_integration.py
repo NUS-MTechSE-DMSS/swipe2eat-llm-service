@@ -8,13 +8,16 @@ LLM-generated output (with LLM mocked).
 
 import os
 import sys
+import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'app'))
 
-from conftest import USER_ID_1, USER_ID_2
+# Same stable IDs used in integration/conftest.py seed data
+USER_ID_1 = str(uuid.UUID("00000000-0000-0000-0000-000000000001"))
+USER_ID_2 = str(uuid.UUID("00000000-0000-0000-0000-000000000002"))
 
 
 # ---------------------------------------------------------------------------
