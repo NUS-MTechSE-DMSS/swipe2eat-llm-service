@@ -1,0 +1,333 @@
+# =============================================================================
+# Production Release Pipeline — LLM Service
+# =============================================================================
+# Before running this workflow, ensure the following GitHub environment is configured:
+# Repository Settings → Environments → New environment → name: "production"
+# Add required reviewers (at least 1 team member)
+# This creates the manual approval gate before deployment.
+# =============================================================================
+
+name: Release — LLM Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version number (e.g. 1.2.3)"
+        required: true
+        type: string
+      release_notes:
+        description: "Release notes (optional — leave blank to auto-generate)"
+        required: false
+        type: string
+
+env:
+  AWS_REGION: ap-southeast-1
+  ECR_REGISTRY: 282793424364.dkr.ecr.ap-southeast-1.amazonaws.com
+  ECR_REPOSITORY: swe5006/llm-service
+  ECS_CLUSTER: swe5006-nus-g3-ecs-dev
+  ECS_SERVICE: swe5006-nus-g3-llm-dev
+  CONTAINER_NAME: llm
+
+jobs:
+  # -------------------------------------------------------------------
+  # 1. Unit Tests — pytest (exclude integration & performance)
+  # -------------------------------------------------------------------
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest pytest-cov
+
+      - name: Run pytest with coverage
+        run: python -m pytest tests/ -v --ignore=tests/integration --ignore=tests/performance --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  # -------------------------------------------------------------------
+  # 2. Integration Tests (needs: unit-test)
+  # -------------------------------------------------------------------
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt testcontainers[postgres] pytest-timeout pytest
+
+      - name: Run integration tests
+        run: python -m pytest tests/integration/ -v --timeout=120 --junitxml=integration-results.xml
+
+      - name: Upload integration test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: integration-results.xml
+
+  # -------------------------------------------------------------------
+  # 3. SonarCloud SAST (needs: unit-test)
+  # -------------------------------------------------------------------
+  sonar:
+    name: SonarCloud SAST
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-xml
+
+      - name: Run SonarCloud SAST
+        uses: SonarSource/sonarqube-scan-action@v5.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  # -------------------------------------------------------------------
+  # 4. Snyk Dependency Scan (needs: unit-test)
+  # -------------------------------------------------------------------
+  snyk-dep:
+    name: Snyk Dependency Scan
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      - name: Run Snyk dependency scan
+        run: snyk test --file=requirements.txt --package-manager=pip --severity-threshold=high
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  # -------------------------------------------------------------------
+  # 5. Build — Docker build + push to ECR (needs: unit-test + integration-test + sonar + snyk-dep)
+  # -------------------------------------------------------------------
+  build:
+    name: Build & Push Image
+    runs-on: ubuntu-latest
+    needs: [unit-test, integration-test, sonar, snyk-dep]
+    outputs:
+      image: ${{ steps.build-image.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials and login to ECR
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ env.AWS_REGION }}
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+      - name: Build and push image to ECR
+        id: build-image
+        run: |
+          IMAGE=$ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }}
+          docker build -t $IMAGE .
+          docker push $IMAGE
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+  # -------------------------------------------------------------------
+  # 6. Snyk Container Scan (needs: build) — continue-on-error
+  # -------------------------------------------------------------------
+  snyk-container:
+    name: Snyk Container Scan
+    runs-on: ubuntu-latest
+    needs: [build]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials and login to ECR
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ env.AWS_REGION }}
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+      - name: Pull container image from ECR
+        run: docker pull ${{ needs.build.outputs.image }}
+
+      - name: Install Snyk CLI
+        run: npm install -g snyk
+
+      - name: Run Snyk container scan
+        run: snyk container test ${{ needs.build.outputs.image }} --severity-threshold=high --file=Dockerfile
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+  # -------------------------------------------------------------------
+  # 7. DAST — ZAP baseline scan (needs: build) — continue-on-error
+  # -------------------------------------------------------------------
+  dast:
+    name: ZAP DAST Scan
+    runs-on: ubuntu-latest
+    needs: [build]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.15.0
+        with:
+          target: https://dev.keiyam.me/llm
+          allow_issue_writing: false
+          fail_action: false
+          cmd_options: "-c zap-context.yaml -a"
+          artifact_name: llm-zap-release-report
+
+  # -------------------------------------------------------------------
+  # 8. Performance Tests — Locust 60s (needs: build) — continue-on-error
+  # -------------------------------------------------------------------
+  performance:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: [build]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Locust
+        run: pip install locust
+
+      - name: Run Locust load test
+        run: |
+          locust -f tests/performance/locustfile.py \
+            --host https://dev.keiyam.me \
+            --headless \
+            --users 10 --spawn-rate 2 --run-time 60s \
+            --html tests/performance/locust-report.html \
+            --exit-code-on-error 1
+
+      - name: Upload Locust report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: locust-performance-report
+          path: tests/performance/locust-report.html
+          retention-days: 14
+
+  # -------------------------------------------------------------------
+  # 9. Deploy to Production + GitHub Release
+  #    (needs: build + snyk-container + dast + performance)
+  #    environment: production → APPROVAL GATE
+  # -------------------------------------------------------------------
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, snyk-container, dast, performance]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials and login to ECR
+        run: |
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set region ${{ env.AWS_REGION }}
+          aws ecr get-login-password --region $AWS_REGION \
+            | docker login --username AWS --password-stdin $ECR_REGISTRY
+
+      - name: Deploy to ECS
+        env:
+          FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+        run: |
+          IMAGE=${{ needs.build.outputs.image }}
+
+          # Get current task definition, inject new image and required env vars
+          NEW_TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition swe5006-nus-g3-llm-dev \
+            --query taskDefinition \
+            --output json \
+            | jq --arg IMAGE "$IMAGE" --arg NAME "$CONTAINER_NAME" \
+                 --arg SECRET_KEY "$FLASK_SECRET_KEY" \
+              '.containerDefinitions |= map(
+                 if .name == $NAME then
+                   .image = $IMAGE |
+                   .environment = ((.environment // []) | map(select(.name != "FLASK_SECRET_KEY")) + [{"name": "FLASK_SECRET_KEY", "value": $SECRET_KEY}])
+                 else . end)
+               | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
+
+          # Register new task definition revision
+          NEW_REVISION=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)
+
+          # Update ECS service with new revision
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --task-definition "$NEW_REVISION"
+
+          # Wait for service to stabilize (max 20 min, poll every 30s)
+          echo "Waiting for ECS service to stabilize..."
+          for i in $(seq 1 40); do
+            STATUS=$(aws ecs describe-services \
+              --cluster $ECS_CLUSTER \
+              --services $ECS_SERVICE \
+              --query 'services[0].deployments[?status==`PRIMARY`].rolloutState' \
+              --output text)
+            echo "Attempt $i/40 — rollout state: $STATUS"
+            if [ "$STATUS" = "COMPLETED" ]; then
+              echo "Deployment stabilized successfully."
+              break
+            fi
+            if [ "$STATUS" = "FAILED" ]; then
+              echo "Deployment failed!"
+              exit 1
+            fi
+            if [ $i -eq 40 ]; then
+              echo "Timed out waiting for stabilization (20 min). Check ECS console."
+              exit 1
+            fi
+            sleep 30
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3.0.0
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          body: ${{ inputs.release_notes }}
+          generate_release_notes: ${{ inputs.release_notes == '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
