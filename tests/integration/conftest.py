@@ -137,6 +137,25 @@ INSERT INTO user_food_preference (user_id, food_id, status) VALUES
 
 
 # ---------------------------------------------------------------------------
+# Helper — psycopg2-compatible connection kwargs from testcontainers
+# ---------------------------------------------------------------------------
+
+def _pg_connect_kwargs(pg_container) -> dict:
+    """Extract host/port/user/password/dbname from a PostgresContainer.
+
+    testcontainers' get_connection_url() returns a SQLAlchemy DSN
+    (postgresql+psycopg2://…) which psycopg2 cannot parse directly.
+    """
+    return {
+        "host": pg_container.get_container_host_ip(),
+        "port": pg_container.get_exposed_port(5432),
+        "user": pg_container.username,
+        "password": pg_container.password,
+        "dbname": pg_container.dbname,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
@@ -150,7 +169,7 @@ def postgres_container():
 @pytest.fixture(scope="session")
 def db_connection(postgres_container):
     """Raw psycopg2 connection used for verification queries."""
-    conn = psycopg2.connect(postgres_container.get_connection_url())
+    conn = psycopg2.connect(**_pg_connect_kwargs(postgres_container))
     conn.autocommit = True
     cur = conn.cursor()
     cur.execute(SCHEMA_DDL)
@@ -171,10 +190,8 @@ def patched_repo(postgres_container, db_connection):
 
     repo = UserProfileRepository(cache=TTLCache())
 
-    _original = repo.get_db_connection
-
     def _tc_connection():
-        return psycopg2.connect(postgres_container.get_connection_url())
+        return psycopg2.connect(**_pg_connect_kwargs(postgres_container))
 
     repo.get_db_connection = _tc_connection
     return repo
