@@ -1,10 +1,27 @@
+# Environment variables
 .env
+.env.*
+.env.local
+.env.production
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Virtual environments
 venv/
 .venv/
+
+# Testing & Coverage
 coverage.xml
 .coverage
 .sonar/
+
+# IDE
+.idea/
+.vscode/
+
+# Logs
+*.log
