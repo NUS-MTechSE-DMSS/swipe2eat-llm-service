@@ -214,7 +214,7 @@ jobs:
         run: npm install -g snyk
 
       - name: Run Snyk container scan
-        run: snyk container test $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} --severity-threshold=critical --exclude-base-image-vulns --file=Dockerfile
+        run: snyk container test $ECR_REGISTRY/$ECR_REPOSITORY:${{ github.sha }} --severity-threshold=critical --exclude-base-image-vulns --file=Dockerfile --policy-path=.snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
