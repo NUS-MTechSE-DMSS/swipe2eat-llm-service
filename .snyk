@@ -1,0 +1,15 @@
+# Snyk (https://snyk.io) policy file
+version: v1.25.0
+
+ignore:
+  SNYK-DEBIAN13-GNUTLS28-16344314:
+    - '*':
+        reason: >-
+          No patched version of gnutls28 available in Debian 13 (trixie) as of
+          2026-05-10. Vulnerability introduced transitively through
+          curl -> libcurl4t64 -> rtmpdump/librtmp1 -> gnutls28/libgnutls30t64.
+          curl is required for Ollama installation script. Risk accepted pending
+          upstream Debian fix. Monitored via Snyk container scan on every build.
+        expires: '2026-08-10T00:00:00.000Z'
+
+patch: {}
