@@ -201,12 +201,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Automation Scan
-        uses: zaproxy/action-automation-scan@v0.4.0
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.15.0
         with:
-          autorun_file: zap-context.yaml
+          target: https://dev.keiyam.me/llm
           allow_issue_writing: false
           fail_action: false
+          cmd_options: "-c zap-context.yaml -a"
           artifact_name: llm-zap-release-report
 
   # -------------------------------------------------------------------
