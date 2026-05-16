@@ -207,7 +207,7 @@ jobs:
           target: https://dev.keiyam.me/llm
           allow_issue_writing: false
           fail_action: false
-          cmd_options: "-c zap-context.yaml -a"
+          cmd_options: "-a"
           artifact_name: llm-zap-release-report
 
   # -------------------------------------------------------------------
