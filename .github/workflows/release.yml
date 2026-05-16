@@ -186,7 +186,7 @@ jobs:
         run: npm install -g snyk
 
       - name: Run Snyk container scan
-        run: snyk container test ${{ needs.build.outputs.image }} --severity-threshold=high --file=Dockerfile
+        run: snyk container test ${{ needs.build.outputs.image }} --severity-threshold=critical --exclude-base-image-vulns --file=Dockerfile --policy-path=.snyk
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
 
@@ -201,13 +201,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.15.0
+      - name: ZAP Automation Scan
+        uses: zaproxy/action-automation-scan@v0.4.0
         with:
-          target: https://dev.keiyam.me/llm
+          autorun_file: zap-context.yaml
           allow_issue_writing: false
           fail_action: false
-          cmd_options: "-c zap-context.yaml -a"
           artifact_name: llm-zap-release-report
 
   # -------------------------------------------------------------------

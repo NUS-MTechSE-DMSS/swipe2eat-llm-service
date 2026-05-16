@@ -12,4 +12,14 @@ ignore:
           upstream Debian fix. Monitored via Snyk container scan on every build.
         expires: '2026-08-10T00:00:00.000Z'
 
+  SNYK-DEBIAN13-GNUTLS28-16344357:
+    - '*':
+        reason: >-
+          CVE-2026-42010. No patched version of gnutls28 available in Debian 13
+          (trixie) as of 2026-05-16. Same transitive path as SNYK-DEBIAN13-GNUTLS28-16344314:
+          curl -> libcurl4t64 -> rtmpdump/librtmp1 -> gnutls28/libgnutls30t64.
+          Risk accepted pending upstream Debian fix. Monitored via Snyk container
+          scan on every build.
+        expires: '2026-08-16T00:00:00.000Z'
+
 patch: {}
